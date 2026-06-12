@@ -3,12 +3,30 @@ import psycopg2
 import json
 from datetime import datetime, timedelta, timezone
 from math import radians, cos, sin, asin, sqrt
+import boto3
+
+def get_aws_parameter(parameter_name):
+    """Descarga de forma segura un parámetro desde SSM Parameter Store"""
+    try:
+        # Inicializa el cliente de Systems Manager indicando tu región (ej. us-east-1)
+        ssm = boto3.client('ssm', region_name='us-east-1')
+        
+        # Solicita el parámetro a AWS
+        response = ssm.get_parameter(Name=parameter_name, WithDecryption=True)
+        return response['Parameter']['Value']
+    except Exception as e:
+        print(f"Error al obtener la API Key desde AWS SSM: {e}")
+        return None
+
+# Descargamos la clave pasándole el nombre exacto de AWS SSM
+api_key = get_aws_parameter('ais_api_key')
 
 def db_connect():
     conn = psycopg2.connect(
             dbname="marinetraffic",
             user="postgres",
-            host="marinetraffic-db.cmo6j2lbjulb.us-east-1.rds.amazonaws.com",
+            password=get_aws_parameter('pass')
+            host=get_aws_parameter('db-endpoint'),
             port=5432
         )
     cur = conn.cursor()
