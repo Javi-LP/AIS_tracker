@@ -6,7 +6,11 @@ from math import radians, cos, sin, asin, sqrt
 
 def db_connect():
     conn = psycopg2.connect(
-            dbname="postgres", user="x", password="x", host="x"
+            dbname="marinetraffic",
+            user="postgres",
+            password="marinetraffic-1",
+            host="marinetraffic-db.cmo6j2lbjulb.us-east-1.rds.amazonaws.com",
+            port=5432
         )
     cur = conn.cursor()
     return cur, conn
@@ -58,7 +62,8 @@ def save_ShipStaticData(static, meta, cur, conn):
         print(f"Guardado Static Data: {name} ({mmsi})")
 
     except Exception as e:
-        pass
+        conn.rollback()
+        print(f"Error en save_ShipStaticData: {e}")
 
 def save_PositionReport_with_cache(ais, meta, cur, conn, cache):
     try:
@@ -175,13 +180,6 @@ def save_PositionReport(ais, meta, cur, conn):
 
 def get_bbox(cur, conn):
     try:
-        conn = psycopg2.connect(
-            dbname="postgres",
-            user="javi",
-            password="J4v13r_lppl",
-            host="192.168.1.152"
-        )
-        cur = conn.cursor()
         # Solo traemos las zonas activas
         cur.execute('SELECT lat_min, lon_min, lat_max, lon_max FROM "MarineTraffic".monitoring_zones WHERE active = TRUE')
         zones = cur.fetchall()
@@ -189,6 +187,7 @@ def get_bbox(cur, conn):
         # Formateamos para AisStream: [[ [latS, lonO], [latN, lonE] ], ...]
         formatted_bboxes = [ [[z[0], z[1]], [z[2], z[3]]] for z in zones ]
         return formatted_bboxes
+        
     except Exception as e:
         print(f"Error obteniendo BBox: {e}")
         return []
