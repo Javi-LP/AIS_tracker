@@ -19,7 +19,7 @@ def get_aws_parameter(parameter_name):
         return None
 
 # Descargamos la clave pasándole el nombre exacto de AWS SSM
-api_key = get_aws_parameter('/config/ais_api_key')
+api_key = get_aws_parameter('ais_api_key')
 
 pos_cache = {}
 
