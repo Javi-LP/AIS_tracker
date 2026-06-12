@@ -18,7 +18,7 @@ def get_aws_parameter(parameter_name):
         print(f"Error al obtener la API Key desde AWS SSM: {e}")
         return None
 
-# Descargamos la clave pasándole el nombre exacto que creaste en la consola
+# Descargamos la clave pasándole el nombre exacto de AWS SSM
 api_key = get_aws_parameter('/config/ais_api_key')
 
 pos_cache = {}
