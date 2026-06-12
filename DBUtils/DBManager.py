@@ -8,7 +8,6 @@ def db_connect():
     conn = psycopg2.connect(
             dbname="marinetraffic",
             user="postgres",
-            password="marinetraffic-1",
             host="marinetraffic-db.cmo6j2lbjulb.us-east-1.rds.amazonaws.com",
             port=5432
         )
