@@ -21,7 +21,7 @@ api_key = get_aws_parameter('ais_api_key')
 
 def db_connect():
     conn = psycopg2.connect(
-            dbname="marinetraffic",
+            dbname="postgres",
             user="postgres",
             password=get_aws_parameter('pass'),
             host=get_aws_parameter('db-endpoint'),
