@@ -25,7 +25,7 @@ def db_connect():
     conn = psycopg2.connect(
             dbname="marinetraffic",
             user="postgres",
-            password=get_aws_parameter('pass')
+            password=get_aws_parameter('pass'),
             host=get_aws_parameter('db-endpoint'),
             port=5432
         )
