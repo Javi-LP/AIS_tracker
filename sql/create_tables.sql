@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS "MarineTraffic".monitoring_zones (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
-INSERT INTO "MarineTraffic".monitoring_zones (name, lat_min, lon_min, lat_max, lon_max)
+INSERT INTO "MarineTraffic".monitoring_zones (zone_name, lat_min, lon_min, lat_max, lon_max)
 VALUES 
     ('Suez_South_Entrance', 29.75, 32.40, 30.10, 32.70),
     ('Gibraltar_Strait', 35.85, -5.60, 36.15, -5.20),
