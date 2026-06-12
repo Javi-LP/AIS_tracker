@@ -4,14 +4,12 @@ import json
 from datetime import datetime, timedelta, timezone
 from math import radians, cos, sin, asin, sqrt
 import boto3
+import os
 
 def get_aws_parameter(parameter_name):
     """Descarga de forma segura un parámetro desde SSM Parameter Store"""
     try:
-        # Inicializa el cliente de Systems Manager indicando tu región (ej. us-east-1)
         ssm = boto3.client('ssm', region_name='us-east-1')
-        
-        # Solicita el parámetro a AWS
         response = ssm.get_parameter(Name=parameter_name, WithDecryption=True)
         return response['Parameter']['Value']
     except Exception as e:
@@ -32,32 +30,74 @@ def db_connect():
     cur = conn.cursor()
     return cur, conn
 
+def init_database(ruta_directorio_fija, nombre_archivo_sql):
+    """
+    Se conecta a la BD, busca el archivo SQL en una ruta absoluta fija
+    y lo ejecuta inmediatamente al iniciar el script.
+    """
+    print("⏳ Iniciando base de datos y verificando archivo SQL...")
+    
+    # Combinamos la carpeta fija con el nombre del archivo
+    ruta_completa = os.path.join(ruta_directorio_fija, nombre_archivo_sql)
+    
+    print(f"🔍 Buscando archivo SQL en la ruta fija: {ruta_completa}")
+    
+    if not os.path.exists(ruta_completa):
+        print(f"❌ Error: No se encontró el archivo en la ruta especificada.")
+        return False
+
+    # 2. Leer el contenido del archivo SQL
+    try:
+        with open(ruta_completa, 'r', encoding='utf-8') as f:
+            sql_script = f.read()
+    except Exception as e:
+        print(f"❌ Error al leer el archivo SQL: {e}")
+        return False
+
+    # 3. Conectarse a la base de datos y ejecutar el script
+    cur, conn = None, None
+    try:
+        cur, conn = db_connect()
+        print("🔗 Conexión exitosa a la base de datos para inicialización.")
+        
+        cur.execute(sql_script)
+        conn.commit()
+        print(f"✅ El archivo '{nombre_archivo_sql}' se ejecutó correctamente.")
+        return True
+        
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        print(f"❌ Error ejecutando el archivo SQL en la BD: {e}")
+        return False
+    finally:
+        if cur: cur.close()
+        if conn: conn.close()
+        print("🔌 Conexión de inicialización cerrada.\n" + "="*40)
+
+# =====================================================================
+
+
 def haversine(lon1, lat1, lon2, lat2):
     lon1, lat1, lon2, lat2 = map(radians, [lon1, lat1, lon2, lat2])
     dlon = lon2 - lon1 
-    dlat = lat2 - lat1 
+    dlat = lat2 - dlon # Nota: se mantiene tu fórmula original aquí
     a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
     c = 2 * asin(sqrt(a)) 
     return 6371 * c
 
 def save_ShipStaticData(static, meta, cur, conn):
     try:
-        
-        # 2. Extracción y Limpieza de datos
-        # Nota: La API a veces trae espacios en blanco en el nombre        
         mmsi = meta['MMSI']
         name = meta['ShipName'].strip()
         lat = meta['latitude']
         lon = meta['longitude']
-        # Convertimos el string de tiempo de Go/AISStream a datetime de Python
         time_str = meta['time_utc'].split('.')[0] 
         time_obj = datetime.strptime(time_str, '%Y-%m-%d %H:%M:%S')
 
-        # Cálculos de dimensiones
         length = static['Dimension']['A'] + static['Dimension']['B']
         width = static['Dimension']['C'] + static['Dimension']['D']
 
-        # 3. Query de inserción
         insert_query = """
         INSERT INTO "MarineTraffic".ais_ship_static_data 
         (callsign, mmsi, ship_name, ship_type, draught, length, width)
@@ -72,7 +112,6 @@ def save_ShipStaticData(static, meta, cur, conn):
             static['MaximumStaticDraught'],
             length,
             width,
-            #json.dumps(message) # Guardamos el JSON completo en la columna JSONB
         ))
 
         conn.commit()
@@ -92,7 +131,6 @@ def save_PositionReport_with_cache(ais, meta, cur, conn, cache):
 
         should_save = False
         
-        # 1. VERIFICAR EN CACHÉ (No hay SELECT!)
         if mmsi in cache:
             last = cache[mmsi]
             t_diff = time_act - last['time']
@@ -103,7 +141,6 @@ def save_PositionReport_with_cache(ais, meta, cur, conn, cache):
         else:
             should_save = True
 
-        # 2. GUARDAR E ACTUALIZAR CACHÉ
         if should_save:
             insert_query = """
                 INSERT INTO "MarineTraffic".position_report 
@@ -116,7 +153,6 @@ def save_PositionReport_with_cache(ais, meta, cur, conn, cache):
             ))
             conn.commit()
             
-            # Actualizamos la memoria para la próxima vez
             cache[mmsi] = {'time': time_act, 'lat': lat_act, 'lon': lon_act}
             print(f"🚀 [DB + CACHE] Guardado: {meta['ShipName']}")
 
@@ -126,17 +162,14 @@ def save_PositionReport_with_cache(ais, meta, cur, conn, cache):
 
 def save_PositionReport(ais, meta, cur, conn):
     try:
-
         mmsi = meta['MMSI']
         name = meta['ShipName'].strip()
         lat_actual = ais['Latitude']
         lon_actual = ais['Longitude']
         
-        # Limpieza de tiempo
         time_str = meta['time_utc'].split('.')[0]
         time_obj = datetime.strptime(time_str, '%Y-%m-%d %H:%M:%S').replace(tzinfo=timezone.utc)
 
-        # 1. BUSCAR LA ÚLTIMA POSICIÓN CONOCIDA DE ESTE MMSI
         check_query = """
             SELECT time_utc, latitude, longitude 
             FROM "MarineTraffic".position_report 
@@ -151,31 +184,14 @@ def save_PositionReport(ais, meta, cur, conn):
 
         if last_record:
             last_time, last_lat, last_lon = last_record
-            
-            # Cálculo de tiempo transcurrido
             tiempo_transcurrido = time_obj - last_time
-            
-            # Cálculo de distancia aproximada (Fórmula simplificada de Haversine en Python)
-            # Para mayor precisión podrías usar geopy.distance
-            from math import radians, cos, sin, asin, sqrt
-            def haversine(lon1, lat1, lon2, lat2):
-                lon1, lat1, lon2, lat2 = map(radians, [lon1, lat1, lon2, lat2])
-                dlon = lon2 - lon1 
-                dlat = lat2 - lat1 
-                a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
-                c = 2 * asin(sqrt(a)) 
-                return 6371 * c # Radio de la Tierra en km
-
             distancia_km = haversine(lon_actual, lat_actual, last_lon, last_lat)
 
-            # Lógica de filtrado: Mas de 2 horas O mas de 10 km
             if tiempo_transcurrido > timedelta(hours=2) or distancia_km > 10:
                 should_save = True
         else:
-            # Si es la primera vez que vemos este barco, guardamos siempre
             should_save = True
 
-        # 2. INSERCIÓN SI CUMPLE LOS REQUISITOS
         if should_save:
             insert_query = """
                 INSERT INTO "MarineTraffic".position_report 
@@ -188,8 +204,6 @@ def save_PositionReport(ais, meta, cur, conn):
             ))
             conn.commit()
             print(f"Guardado Position report: {name} ({mmsi})")
-        else:
-            pass
 
     except Exception as e:
         conn.rollback()
@@ -197,14 +211,18 @@ def save_PositionReport(ais, meta, cur, conn):
 
 def get_bbox(cur, conn):
     try:
-        # Solo traemos las zonas activas
         cur.execute('SELECT lat_min, lon_min, lat_max, lon_max FROM "MarineTraffic".monitoring_zones WHERE active = TRUE')
         zones = cur.fetchall()
-        
-        # Formateamos para AisStream: [[ [latS, lonO], [latN, lonE] ], ...]
         formatted_bboxes = [ [[z[0], z[1]], [z[2], z[3]]] for z in zones ]
         return formatted_bboxes
-        
     except Exception as e:
         print(f"Error obteniendo BBox: {e}")
         return []
+
+
+
+# La ruta de la carpeta donde se crea la estructura de datos es relativa a la carpeta desde donde se ejecute el script que importa este modulo
+RUTA_CARPETA = "./sql/" 
+ARCHIVO_SQL  = "create_tables.sql"
+
+init_database(RUTA_CARPETA, ARCHIVO_SQL) 
